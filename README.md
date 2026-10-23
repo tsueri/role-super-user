@@ -2,7 +2,7 @@
 
 A WordPress **must-use (mu-)plugin**: on every site it is installed on, it maintains a **Super-User** role — a per-site role that mirrors that site's Administrator capabilities minus a fixed Blocklist, kept in sync automatically.
 
-Super-Users are trusted powerusers on your own site: they can do everything a site Administrator can — except user management, plugin and theme management, code editing, and core updates. See `GLOSSARY.md` for the exact language: **Super-User**, **Blocklist**, **Capability sync**, **Abolish**.
+Super-Users are trusted powerusers on your own site: they can do everything a site Administrator can — except user management, plugin and theme management, code editing, core updates, and, on single site, exporting other users' personal data. See `GLOSSARY.md` for the exact language: **Super-User**, **Blocklist**, **Capability sync**, **Abolish**.
 
 > **Break-glass:** this role is a delegation of trust, not a security boundary. Always keep at least one real Administrator account, and keep its credentials somewhere a compromised site cannot reach.
 
@@ -38,6 +38,7 @@ Deliberate exceptions:
 - **User-creation options.** `default_role` and `users_can_register` are guarded by `promote_users` and `create_users`. A crafted Settings POST cannot turn the new-user default role into Administrator or open registration with that default.
 - **Network Setup.** `setup_network` maps to `manage_options` on single site, so it is denied to Super-Users. They cannot run Network Setup and name themselves network Super Admin.
 - **All Settings.** `options.php` writes arbitrary options (`active_plugins`, `template`, `stylesheet`) when accessed directly. Super-Users are kept off that page; normal Settings screens still save because they post with their own `option_page`.
+- **Personal-data export.** `export_others_personal_data` also maps to `manage_options` on single site, so the privacy tools would let a Super-User export another user's personal data — an Administrator's included. It is denied to Super-Users; Administrators keep the tool. Erase needs no guard: the erase action also requires `delete_users`, which the Blocklist removes. On multisite core already denies the privacy tools to non-network users.
 
 These guards are role-specific: Administrators and network Super Admins keep full control. They are not a security boundary — see Caveats.
 
@@ -115,8 +116,9 @@ Complete removal of the Super-User role from a site: sync stopped, role stripped
 - **Plugins that check the role *name* `administrator`** instead of capabilities will not recognize Super-Users — they may hide menus or deny screens that a capability check would allow. This is documented, not worked around.
 - mu-plugins cannot be deactivated from the admin UI; "uninstalling" is the Abolish procedure.
 - `unfiltered_html` on multisite is core-denied for Super-Users the same as for subsite Administrators (see the Blocklist section).
-- **Open gap: `unfiltered_html` on single site.** A Super-User can publish raw HTML/JS — scripts, iframes, event handlers — in posts, pages, and widgets. If an Administrator views or previews that content while logged in, the script runs in an admin session and could escalate (create an Administrator, activate plugins). This gap already exists in the default **Editor** role — Editors hold `unfiltered_html` on single site and have the same ability — so this plugin neither introduces it nor closes it; it is accepted and documented in ADR-0001. Blocking it would make Super-Users less trusted than Editors; do that only in a custom build if a site needs the stricter boundary. The plugin's escalation guards (default_role, users_can_register, setup_network, All Settings) do not change this.
+- **Open gap: `unfiltered_html` on single site.** A Super-User can publish raw HTML/JS — scripts, iframes, event handlers — in posts, pages, and widgets. If an Administrator views or previews that content while logged in, the script runs in an admin session and could escalate (create an Administrator, activate plugins). This gap already exists in the default **Editor** role — Editors hold `unfiltered_html` on single site and have the same ability — so this plugin neither introduces it nor closes it; it is accepted and documented in ADR-0001. Blocking it would make Super-Users less trusted than Editors; do that only in a custom build if a site needs the stricter boundary. The plugin's escalation guards (default_role, users_can_register, setup_network, All Settings, personal-data export) do not change this.
 - **The escalation guards cover core's single-site routes, not `manage_options` itself.** Any plugin that treats `manage_options` as "administrator" (file managers, SQL runners, plugin managers, arbitrary uploaders) can still expose dangerous functionality to a Super-User. Curate the plugin set, or block those plugin capabilities in a custom build.
+- **The privacy-tools boundary is export-only and deny-only.** On single site a Super-User cannot export another user's personal data (`export_others_personal_data` is denied by the guard); erase is closed by the erase action's own `delete_users` requirement, not by this plugin. Plugins that export or erase personal data under capabilities of their own are not covered.
 
 ## Tests
 
@@ -138,7 +140,7 @@ npm run test:cli     # WP-CLI smoke test (single site)
 npm run test:cli:multisite
 ```
 
-The suite proves the synced capability set: the stored role equals the Administrator minus the Blocklist; blocklist caps never re-enter the role; runtime `user_can()` matches the stored role (own profile editable, others' not); `unfiltered_html` is stored on both configs but only effective where the site's Administrator is actually granted it (single site — subsites are denied it by core, and so are their Super-Users); idempotent boots write nothing; new Administrator capabilities propagate on the next boot while blocklisted ones never do; removed ones are removed; on multisite, untouched subsites get no role; a missing Administrator role fatals nothing and creates nothing; a WP-CLI boot leaves the role in sync. It also covers the escalation guards: a Super-User's write to `default_role` or `users_can_register` is a no-op while an Administrator's still succeeds, and a Super-User cannot satisfy `setup_network` or reach All Settings while an Administrator still can.
+The suite proves the synced capability set: the stored role equals the Administrator minus the Blocklist; blocklist caps never re-enter the role; runtime `user_can()` matches the stored role (own profile editable, others' not); `unfiltered_html` is stored on both configs but only effective where the site's Administrator is actually granted it (single site — subsites are denied it by core, and so are their Super-Users); idempotent boots write nothing; new Administrator capabilities propagate on the next boot while blocklisted ones never do; removed ones are removed; on multisite, untouched subsites get no role; a missing Administrator role fatals nothing and creates nothing; a WP-CLI boot leaves the role in sync. It also covers the escalation guards: a Super-User's write to `default_role` or `users_can_register` is a no-op while an Administrator's still succeeds, and a Super-User cannot satisfy `setup_network`, cannot export another user's personal data (`export_others_personal_data`, denied on both configs — on multisite core denies it already), or reach All Settings while an Administrator still can.
 
 **Manual pre-rollout checklist** — run once on a real site with real plugins after assigning the role; the automated suite proves the cap set, this proves what a human sees:
 
@@ -150,3 +152,4 @@ The suite proves the synced capability set: the stored role equals the Administr
 - [ ] Users: own profile editable; other users' profiles are not; no user create/delete.
 - [ ] Settings: General saves, but Membership and New User Default Role cannot be changed by a Super-User.
 - [ ] `/wp-admin/options.php` (All Settings) is denied to a Super-User.
+- [ ] Exporting another user's personal data (Tools → Export Personal Data) is denied to a Super-User.
