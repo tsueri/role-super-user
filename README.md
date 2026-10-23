@@ -29,7 +29,17 @@ Deliberate exceptions:
 
 - **`edit_theme_options` is kept.** Menus, widgets, and the Customizer stay available; theme switching, installing, and file editing stay blocked.
 - **`update_core` is stripped.** Core updates stay with admins and the network.
-- **`unfiltered_html` is not blocklisted**, but it is only ever cloned from the Administrator: single-site Administrators normally hold it, so their Super-Users do too; on multisite, subsite Administrators are denied it by WordPress core (`map_meta_cap()`), and so are their Super-Users. This plugin never grants more than the site's Administrator already has.
+- **`unfiltered_html` is not blocklisted**, but it is only ever cloned from the Administrator: single-site Administrators normally hold it, so their Super-Users do too; on multisite, subsite Administrators are denied it by WordPress core (`map_meta_cap()`), and so are their Super-Users. This plugin never grants more than the site's Administrator already has. Keeping it is an Editor-parity trade-off with a documented open gap (ADR-0001).
+
+### Escalation guards
+
+`manage_options` is broader than it looks: core's Settings API trusts it for writes and screens that would otherwise bypass the Blocklist. The plugin closes the known routes from Super-User to Administrator or network Super Admin:
+
+- **User-creation options.** `default_role` and `users_can_register` are guarded by `promote_users` and `create_users`. A crafted Settings POST cannot turn the new-user default role into Administrator or open registration with that default.
+- **Network Setup.** `setup_network` maps to `manage_options` on single site, so it is denied to Super-Users. They cannot run Network Setup and name themselves network Super Admin.
+- **All Settings.** `options.php` writes arbitrary options (`active_plugins`, `template`, `stylesheet`) when accessed directly. Super-Users are kept off that page; normal Settings screens still save because they post with their own `option_page`.
+
+These guards are role-specific: Administrators and network Super Admins keep full control. They are not a security boundary — see Caveats.
 
 ## Install
 
@@ -105,6 +115,8 @@ Complete removal of the Super-User role from a site: sync stopped, role stripped
 - **Plugins that check the role *name* `administrator`** instead of capabilities will not recognize Super-Users — they may hide menus or deny screens that a capability check would allow. This is documented, not worked around.
 - mu-plugins cannot be deactivated from the admin UI; "uninstalling" is the Abolish procedure.
 - `unfiltered_html` on multisite is core-denied for Super-Users the same as for subsite Administrators (see the Blocklist section).
+- **Open gap: `unfiltered_html` on single site.** A Super-User can publish raw HTML/JS — scripts, iframes, event handlers — in posts, pages, and widgets. If an Administrator views or previews that content while logged in, the script runs in an admin session and could escalate (create an Administrator, activate plugins). This gap already exists in the default **Editor** role — Editors hold `unfiltered_html` on single site and have the same ability — so this plugin neither introduces it nor closes it; it is accepted and documented in ADR-0001. Blocking it would make Super-Users less trusted than Editors; do that only in a custom build if a site needs the stricter boundary. The plugin's escalation guards (default_role, users_can_register, setup_network, All Settings) do not change this.
+- **The escalation guards cover core's single-site routes, not `manage_options` itself.** Any plugin that treats `manage_options` as "administrator" (file managers, SQL runners, plugin managers, arbitrary uploaders) can still expose dangerous functionality to a Super-User. Curate the plugin set, or block those plugin capabilities in a custom build.
 
 ## Tests
 
@@ -126,7 +138,7 @@ npm run test:cli     # WP-CLI smoke test (single site)
 npm run test:cli:multisite
 ```
 
-The suite proves the synced capability set: the stored role equals the Administrator minus the Blocklist; blocklist caps never re-enter the role; runtime `user_can()` matches the stored role (own profile editable, others' not); `unfiltered_html` is stored on both configs but only effective where the site's Administrator is actually granted it (single site — subsites are denied it by core, and so are their Super-Users); idempotent boots write nothing; new Administrator capabilities propagate on the next boot while blocklisted ones never do; removed ones are removed; on multisite, untouched subsites get no role; a missing Administrator role fatals nothing and creates nothing; a WP-CLI boot leaves the role in sync.
+The suite proves the synced capability set: the stored role equals the Administrator minus the Blocklist; blocklist caps never re-enter the role; runtime `user_can()` matches the stored role (own profile editable, others' not); `unfiltered_html` is stored on both configs but only effective where the site's Administrator is actually granted it (single site — subsites are denied it by core, and so are their Super-Users); idempotent boots write nothing; new Administrator capabilities propagate on the next boot while blocklisted ones never do; removed ones are removed; on multisite, untouched subsites get no role; a missing Administrator role fatals nothing and creates nothing; a WP-CLI boot leaves the role in sync. It also covers the escalation guards: a Super-User's write to `default_role` or `users_can_register` is a no-op while an Administrator's still succeeds, and a Super-User cannot satisfy `setup_network` or reach All Settings while an Administrator still can.
 
 **Manual pre-rollout checklist** — run once on a real site with real plugins after assigning the role; the automated suite proves the cap set, this proves what a human sees:
 
@@ -136,3 +148,5 @@ The suite proves the synced capability set: the stored role equals the Administr
 - [ ] Themes: Customizer, widgets, and menus work; switching, installing, and the theme file editor do not.
 - [ ] The Updates screen shows no core-update action.
 - [ ] Users: own profile editable; other users' profiles are not; no user create/delete.
+- [ ] Settings: General saves, but Membership and New User Default Role cannot be changed by a Super-User.
+- [ ] `/wp-admin/options.php` (All Settings) is denied to a Super-User.

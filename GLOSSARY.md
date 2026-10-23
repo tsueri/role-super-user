@@ -19,3 +19,7 @@ _Avoid_: role snapshot, cloning, mirroring
 **Abolish**:
 The complete removal of the Super-User role from a site: sync stopped, the role stripped from its holders, the role definition deleted. Mere file removal is not abolish — it stops sync but revokes nothing.
 _Avoid_: uninstall, deactivate (mu-plugins have neither)
+
+**Editor parity**:
+The trust floor for Super-Users: never restrict a Super-User below what a default Editor can do on the same site. `unfiltered_html` is kept on single site because Editors hold it there too; its stored-XSS risk is an accepted open gap (ADR-0001), not a flaw this plugin introduces.
+_Avoid_: capability parity, admin parity

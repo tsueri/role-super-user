@@ -227,6 +227,107 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Escalation guard: a Super-User cannot turn the default role into
+	 * Administrator or enable registration with that default, even though
+	 * `manage_options` lets them reach options.php. A crafted Settings POST must
+	 * be a no-op.
+	 */
+	public function test_super_user_cannot_create_administrators_via_settings() {
+		wp_set_current_user( 0 );
+
+		$user_id  = self::factory()->user->create( array( 'role' => 'super_user' ) );
+		$original = get_option( 'default_role' );
+
+		update_option( 'default_role', 'subscriber' );
+		update_option( 'users_can_register', 0 );
+
+		wp_set_current_user( $user_id );
+
+		try {
+			$this->assertFalse( update_option( 'default_role', 'administrator' ), 'The guarded option write must be a no-op.' );
+			$this->assertSame( 'subscriber', get_option( 'default_role' ) );
+
+			$this->assertFalse( update_option( 'users_can_register', 1 ), 'The guarded option write must be a no-op.' );
+			$this->assertSame( 0, (int) get_option( 'users_can_register' ) );
+		} finally {
+			wp_set_current_user( 0 );
+			update_option( 'default_role', $original );
+			update_option( 'users_can_register', 0 );
+		}
+	}
+
+	/**
+	 * The guard is role-specific: an Administrator keeps full control.
+	 */
+	public function test_administrator_can_still_change_default_role() {
+		wp_set_current_user( 0 );
+
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		$original = get_option( 'default_role' );
+
+		update_option( 'default_role', 'subscriber' );
+		wp_set_current_user( $admin_id );
+
+		try {
+			$this->assertTrue( update_option( 'default_role', 'author' ) );
+			$this->assertSame( 'author', get_option( 'default_role' ) );
+		} finally {
+			wp_set_current_user( 0 );
+			update_option( 'default_role', $original );
+		}
+	}
+
+	/**
+	 * Escalation guard: `setup_network` maps to `manage_options` on single site.
+	 * A Super-User must not satisfy it; an Administrator still does.
+	 */
+	public function test_super_user_cannot_setup_network() {
+		$super_id = self::factory()->user->create( array( 'role' => 'super_user' ) );
+		$this->assertFalse( user_can( $super_id, 'setup_network' ) );
+
+		if ( ! is_multisite() ) {
+			$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+			$this->assertTrue( user_can( $admin_id, 'setup_network' ), 'The guard must not remove Administrator access.' );
+		}
+	}
+
+	/**
+	 * The legacy All Settings screen writes arbitrary options (active_plugins,
+	 * template, stylesheet), so a Super-User must not reach it. Administrators
+	 * keep the page's normal `manage_options` requirement.
+	 */
+	public function test_super_user_cannot_reach_all_settings() {
+		wp_set_current_user( 0 );
+
+		$super_id = self::factory()->user->create( array( 'role' => 'super_user' ) );
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+
+		try {
+			$this->assertSame(
+				'manage_options',
+				apply_filters( 'option_page_capability_options', 'manage_options' ),
+				'Logged-out system updates keep the normal capability.'
+			);
+
+			wp_set_current_user( $super_id );
+			$this->assertSame(
+				'do_not_allow',
+				apply_filters( 'option_page_capability_options', 'manage_options' ),
+				'A Super-User must not satisfy the All Settings capability.'
+			);
+
+			wp_set_current_user( $admin_id );
+			$this->assertSame(
+				'manage_options',
+				apply_filters( 'option_page_capability_options', 'manage_options' ),
+				'Administrators keep the All Settings screen.'
+			);
+		} finally {
+			wp_set_current_user( 0 );
+		}
+	}
+
+	/**
 	 * Missing-Administrator guard: with the administrator role gone, the sync
 	 * must not fatal, must not create a super_user role, and must not revoke an
 	 * existing one — sync stops, revocation never happens.

@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  Super-User Role
  * Description:  Maintains a per-site Super-User role that mirrors the site's Administrator capabilities minus the Blocklist. Drop this file into wp-content/mu-plugins/ to install.
- * Version:      1.0.0
+ * Version:      1.0.1
  * Requires at least: 4.9
  * Requires PHP: 7.0
  * License:      GPL-2.0-or-later
@@ -135,5 +135,150 @@ function super_user_role_sync() {
 		$current_user->for_site( get_current_blog_id() );
 	}
 }
+
+/**
+ * Whether a user holds the Super-User role without also being an Administrator
+ * (or a network Super Admin, which the caller handles separately).
+ *
+ * @param int $user_id User ID.
+ * @return bool True when the user is a pure Super-User.
+ */
+function super_user_role_is_restricted( $user_id ) {
+	$user = get_userdata( $user_id );
+	if ( ! $user ) {
+		return false;
+	}
+
+	$roles = (array) $user->roles;
+
+	return in_array( 'super_user', $roles, true ) && ! in_array( 'administrator', $roles, true );
+}
+
+/**
+ * Options that would let a Super-User create an Administrator if they could
+ * write them, and the capability normally required to change each one.
+ *
+ * `options.php` gates Settings writes on `manage_options` alone, so the Settings
+ * screen hides these fields from Super-Users but a crafted POST can still submit
+ * them. The Blocklist removes the capabilities below, which is why the write is
+ * denied here rather than relying on the UI.
+ *
+ * @return array<string, string> Option name => required capability.
+ */
+function super_user_role_guarded_options() {
+	return array(
+		'default_role'       => 'promote_users',
+		'users_can_register' => 'create_users',
+	);
+}
+
+/**
+ * Deny a Super-User's attempt to write an option that can mint Administrators.
+ *
+ * Returning the old value makes `update_option()` a no-op without erroring, so
+ * a crafted Settings POST leaves the stored option untouched.
+ *
+ * @param mixed  $value     The new option value.
+ * @param mixed  $old_value The current option value.
+ * @param string $option    The option name.
+ * @return mixed The new value, or the old value when the change is denied.
+ */
+function super_user_role_guard_option_write( $value, $old_value, $option ) {
+	$guarded = super_user_role_guarded_options();
+	if ( ! isset( $guarded[ $option ] ) || ! is_user_logged_in() ) {
+		return $value;
+	}
+
+	if ( ! super_user_role_is_restricted( get_current_user_id() ) ) {
+		return $value;
+	}
+
+	if ( current_user_can( $guarded[ $option ] ) ) {
+		return $value;
+	}
+
+	return $old_value;
+}
+
+/**
+ * Deny `setup_network` to a Super-User.
+ *
+ * On single site this meta capability maps to `manage_options`, and the Network
+ * Setup screen accepts an arbitrary network-admin email. Without this guard a
+ * Super-User could run Network Setup, name themselves, and become a network
+ * Super Admin — a role that bypasses every capability check, including the
+ * Blocklist.
+ *
+ * @param string[] $caps    Required primitive capabilities.
+ * @param string   $cap     The capability being checked.
+ * @param int      $user_id User ID.
+ * @return string[] Primitive capabilities.
+ */
+function super_user_role_deny_meta_caps( $caps, $cap, $user_id ) {
+	if ( 'setup_network' !== $cap ) {
+		return $caps;
+	}
+
+	if ( is_super_admin( $user_id ) || ! super_user_role_is_restricted( $user_id ) ) {
+		return $caps;
+	}
+
+	return array( 'do_not_allow' );
+}
+
+/**
+ * Keep a Super-User out of the legacy "All Settings" screen.
+ *
+ * `options.php` renders and writes arbitrary options when it is requested
+ * directly (`option_page=options`, or no page at all). That bypasses the
+ * Blocklist: `active_plugins`, `template`, and `stylesheet` are all writable
+ * there. Normal Settings screens still POST to `options.php` with their own
+ * `option_page`, so they keep working.
+ */
+function super_user_role_restrict_all_settings() {
+	$user_id = get_current_user_id();
+	if ( is_super_admin( $user_id ) || ! super_user_role_is_restricted( $user_id ) ) {
+		return;
+	}
+
+	$method      = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( (string) $_SERVER['REQUEST_METHOD'] ) : 'GET';
+	$option_page = isset( $_REQUEST['option_page'] ) && is_string( $_REQUEST['option_page'] )
+		? sanitize_text_field( wp_unslash( $_REQUEST['option_page'] ) )
+		: '';
+
+	if ( 'POST' !== $method || '' === $option_page || 'options' === $option_page ) {
+		wp_die(
+			'Sorry, you are not allowed to manage these options.',
+			'',
+			array( 'response' => 403 )
+		);
+	}
+}
+
+/**
+ * Keep a Super-User out of the "All Settings" page.
+ *
+ * The page's capability is `manage_options`; returning `do_not_allow` for a
+ * Super-User rejects the check without changing what Administrators need. On
+ * WordPress older than 7.0 this filter does not apply to direct access, so
+ * `super_user_role_restrict_all_settings()` is the second line of defence.
+ *
+ * @param string $capability Capability required by options.php.
+ * @return string Capability required by options.php.
+ */
+function super_user_role_restrict_all_settings_cap( $capability ) {
+	$user_id = get_current_user_id();
+	if ( ! is_super_admin( $user_id ) && super_user_role_is_restricted( $user_id ) ) {
+		return 'do_not_allow';
+	}
+
+	return $capability;
+}
+
+add_filter( 'pre_update_option_default_role', 'super_user_role_guard_option_write', 10, 3 );
+add_filter( 'pre_update_option_users_can_register', 'super_user_role_guard_option_write', 10, 3 );
+add_filter( 'map_meta_cap', 'super_user_role_deny_meta_caps', 10, 3 );
+add_filter( 'option_page_capability_options', 'super_user_role_restrict_all_settings_cap' );
+add_action( 'load-options.php', 'super_user_role_restrict_all_settings' );
 
 add_action( 'wp_loaded', 'super_user_role_sync' );
