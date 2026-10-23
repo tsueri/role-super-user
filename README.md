@@ -62,7 +62,7 @@ To sync (and verify) every site on a network in one go — rarely needed, since 
 wp site list --field=url --archived=0 --deleted=0 --spam=0 | xargs -n1 -I{} sh -c 'wp role list --url={}'
 ```
 
-Note the filters: archived, spam, and deleted sites are excluded, and `--field=url` is built from each site's `home` option — a site whose `home` and `siteurl` disagree will fail with `ms_site_not_found`.
+Note the filters: archived, spam, and deleted sites are excluded, and `--field=url` is built from each site's `home` option — a site whose `home` and `siteurl` disagree makes its URL unresolvable, and commands targeting it die with `Error: Site '<url>' not found. Verify --url=<url> matches an existing site.`
 
 **Upgrade** = overwrite the file; the sync re-runs on the next request, per site.
 
@@ -126,7 +126,7 @@ npm run test:cli     # WP-CLI smoke test (single site)
 npm run test:cli:multisite
 ```
 
-The suite proves the synced capability set: the stored role equals the Administrator minus the Blocklist; blocklist caps never re-enter the role; runtime `user_can()` matches the stored role (own profile editable, others' not); `unfiltered_html` is stored everywhere but only effective where the Administrator has it; idempotent boots write nothing; new Administrator capabilities propagate on the next boot while blocklisted ones never do; removed ones are removed; on multisite, untouched subsites get no role; a missing Administrator role fatals nothing and creates nothing; a WP-CLI boot leaves the role in sync.
+The suite proves the synced capability set: the stored role equals the Administrator minus the Blocklist; blocklist caps never re-enter the role; runtime `user_can()` matches the stored role (own profile editable, others' not); `unfiltered_html` is stored on both configs but only effective where the site's Administrator is actually granted it (single site — subsites are denied it by core, and so are their Super-Users); idempotent boots write nothing; new Administrator capabilities propagate on the next boot while blocklisted ones never do; removed ones are removed; on multisite, untouched subsites get no role; a missing Administrator role fatals nothing and creates nothing; a WP-CLI boot leaves the role in sync.
 
 **Manual pre-rollout checklist** — run once on a real site with real plugins after assigning the role; the automated suite proves the cap set, this proves what a human sees:
 
