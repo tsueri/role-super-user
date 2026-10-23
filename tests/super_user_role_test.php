@@ -208,8 +208,11 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 	public function test_secret_management_stays_with_administrators() {
 		require_once __DIR__ . '/fixtures/propagate-caps.php';
 
-		$this->assertArrayNotHasKey( 'manage_secrets', get_role( 'super_user' )->capabilities, 'Precondition: the cap has not propagated yet.' );
-		$this->assertArrayNotHasKey( 'manage_network_secrets', get_role( 'super_user' )->capabilities, 'Precondition: the cap has not propagated yet.' );
+		$secret_caps = array( 'manage_secrets', 'manage_network_secrets' );
+
+		foreach ( $secret_caps as $cap ) {
+			$this->assertArrayNotHasKey( $cap, get_role( 'super_user' )->capabilities, "Precondition: '{$cap}' has not propagated yet." );
+		}
 
 		rsu_fixture_inject_secret_caps();
 		super_user_role_sync();
@@ -217,18 +220,18 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 		$administrator = get_role( 'administrator' );
 		$super_user    = get_role( 'super_user' );
 
-		$this->assertArrayHasKey( 'manage_secrets', $administrator->capabilities, 'Precondition: the Administrator now holds the capability.' );
-		$this->assertArrayHasKey( 'manage_network_secrets', $administrator->capabilities, 'Precondition: the Administrator now holds the capability.' );
-
-		$this->assertArrayNotHasKey( 'manage_secrets', $super_user->capabilities, 'Credential management must never enter the role.' );
-		$this->assertArrayNotHasKey( 'manage_network_secrets', $super_user->capabilities, 'Network credential management must never enter the role.' );
+		foreach ( $secret_caps as $cap ) {
+			$this->assertArrayHasKey( $cap, $administrator->capabilities, "Precondition: the Administrator now holds '{$cap}'." );
+			$this->assertArrayNotHasKey( $cap, $super_user->capabilities, "Blocklist cap '{$cap}' must never enter the role." );
+		}
 
 		// Runtime, not merely stored: the Super-User role holds neither
 		// primitive, so the denial holds on both configs whether or not 7.2
 		// adds a check-time subsite gate.
 		$super_id = self::factory()->user->create( array( 'role' => 'super_user' ) );
-		$this->assertFalse( user_can( $super_id, 'manage_secrets' ), 'A Super-User must not manage secrets.' );
-		$this->assertFalse( user_can( $super_id, 'manage_network_secrets' ), 'A Super-User must not manage network secrets.' );
+		foreach ( $secret_caps as $cap ) {
+			$this->assertFalse( user_can( $super_id, $cap ), "'{$cap}' must stay out of a Super-User's runtime checks." );
+		}
 
 		/*
 		 * Administrator allow-check, single site only — deliberately not
