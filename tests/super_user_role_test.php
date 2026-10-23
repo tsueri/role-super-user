@@ -292,6 +292,26 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Escalation guard: `export_others_personal_data` maps to `manage_options`
+	 * on single site, so without the guard a Super-User could export another
+	 * user's personal data — an Administrator's included — bypassing the
+	 * Blocklist's `edit_users`/`list_users` intent. Administrators keep the
+	 * tool; on multisite core denies the privacy tools to non-network users,
+	 * and the guard changes nothing there.
+	 */
+	public function test_super_user_cannot_export_others_personal_data() {
+		$super_id = self::factory()->user->create( array( 'role' => 'super_user' ) );
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+
+		$this->assertFalse( user_can( $super_id, 'export_others_personal_data' ) );
+		$this->assertSame(
+			! is_multisite(),
+			user_can( $admin_id, 'export_others_personal_data' ),
+			'Administrators keep the tool on single site; the multisite denial is core\'s and must not change.'
+		);
+	}
+
+	/**
 	 * The legacy All Settings screen writes arbitrary options (active_plugins,
 	 * template, stylesheet), so a Super-User must not reach it. Administrators
 	 * keep the page's normal `manage_options` requirement.
