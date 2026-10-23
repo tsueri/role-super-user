@@ -16,7 +16,9 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 	/**
 	 * The Blocklist, hardcoded here as the locked spec (GLOSSARY.md:
 	 * "Blocklist"). The suite asserts against this list, not against the
-	 * plugin's copy of it, so the two can never drift apart silently.
+	 * plugin's copy of it — and pins the two copies together
+	 * (test_locked_blocklist_matches_the_plugin_blocklist()), so neither can
+	 * drift apart silently.
 	 *
 	 * @var string[]
 	 */
@@ -54,6 +56,22 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 	public function set_up() {
 		parent::set_up();
 		$this->role_key = $GLOBALS['wpdb']->get_blog_prefix() . 'user_roles';
+	}
+
+	/**
+	 * The suite's locked Blocklist above and the plugin's Blocklist must be
+	 * the same list: this pins the two copies together so neither can drift
+	 * silently — e.g. a capability added to one and forgotten in the other.
+	 * Compared order-insensitively: order is presentation, membership is spec.
+	 */
+	public function test_locked_blocklist_matches_the_plugin_blocklist() {
+		$expected = self::$blocklist;
+		$actual   = super_user_role_blocklist();
+
+		sort( $expected );
+		sort( $actual );
+
+		$this->assertSame( $expected, $actual, 'The locked Blocklist and the plugin Blocklist have drifted apart.' );
 	}
 
 	/**
