@@ -321,6 +321,98 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The plan: what an Abolish of one site would do, changing nothing.
+	 */
+	public function test_abolish_plan_reports_without_changing() {
+		self::factory()->user->create( array( 'role' => 'super_user' ) );
+
+		$plan = super_user_role_abolish_plan_site( get_current_blog_id() );
+
+		$this->assertSame( 1, $plan['holders'] );
+		$this->assertTrue( $plan['role_exists'] );
+		$this->assertNotEmpty( $plan['url'] );
+
+		$this->assertNotNull( get_role( 'super_user' ), 'Planning changes nothing.' );
+	}
+
+	/**
+	 * Abolish, one site: holders stripped (other roles and membership kept),
+	 * role definition deleted — and the strip-before-delete order holds. A
+	 * sync that still runs here (the file is present in tests) can only
+	 * re-create an empty definition no holder would fill; that is the
+	 * resurrection protection the order buys.
+	 */
+	public function test_abolish_site_strips_holders_then_deletes_role() {
+		$snapshot = get_option( $this->role_key );
+		$super_id = self::factory()->user->create( array( 'role' => 'super_user' ) );
+		$dual_id  = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		get_userdata( $dual_id )->add_role( 'super_user' );
+
+		try {
+			$result = super_user_role_abolish_site( get_current_blog_id() );
+
+			$this->assertSame( 2, $result['holders_stripped'] );
+			$this->assertTrue( $result['role_deleted'] );
+			$this->assertNull( get_role( 'super_user' ), 'The role definition is deleted.' );
+
+			$this->assertNotFalse( get_userdata( $super_id ), 'The holder keeps site membership.' );
+			$this->assertSame( array(), get_userdata( $super_id )->roles, 'A pure holder is left roleless — stripping never re-assigns.' );
+			$this->assertSame( array( 'administrator' ), get_userdata( $dual_id )->roles, 'A dual holder keeps the Administrator role.' );
+
+			super_user_role_sync();
+			$this->assertNotNull( get_role( 'super_user' ), 'With the file still present, sync re-creates the definition.' );
+			$this->assertSame( array(), get_userdata( $super_id )->roles, 'Stripped holders are not re-powered.' );
+
+			$again = super_user_role_abolish_site( get_current_blog_id() );
+			$this->assertSame( 0, $again['holders_stripped'], 'Abolish is idempotent once holders are gone.' );
+			$this->assertTrue( $again['role_deleted'] );
+		} finally {
+			update_option( $this->role_key, $snapshot );
+			$GLOBALS['wp_roles'] = null;
+		}
+	}
+
+	/**
+	 * Abolish, network: every live site is covered; archived, spam, and
+	 * deleted sites are skipped, together with their holders and role
+	 * definitions.
+	 */
+	public function test_abolish_network_covers_live_sites_and_skips_archived() {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Multisite only.' );
+		}
+
+		$blog_id = self::factory()->blog->create();
+		$prefix  = $GLOBALS['wpdb']->get_blog_prefix( $blog_id );
+		$snapshot = get_option( $this->role_key );
+
+		try {
+			// Give the subsite a booted state: a role definition and one holder.
+			$holder_id = self::factory()->user->create();
+			switch_to_blog( $blog_id );
+			add_role( 'super_user', 'Super-User', array( 'read' => true ) );
+			add_user_to_blog( $blog_id, $holder_id, 'super_user' );
+			restore_current_blog();
+
+			update_blog_status( $blog_id, 'archived', 1 );
+
+			$results = super_user_role_abolish_network();
+
+			$this->assertArrayHasKey( get_current_blog_id(), $results, 'The current site is covered.' );
+			$this->assertArrayNotHasKey( $blog_id, $results, 'Archived, spam, and deleted sites are skipped.' );
+			$this->assertNull( get_role( 'super_user' ), "The current site's role definition is deleted." );
+
+			$roles = get_blog_option( $blog_id, $prefix . 'user_roles' );
+			$this->assertIsArray( $roles );
+			$this->assertArrayHasKey( 'super_user', $roles, 'The archived site is untouched.' );
+			$this->assertArrayHasKey( 'super_user', (array) get_user_meta( $holder_id, $prefix . 'capabilities', true ), "The archived site's holder is untouched." );
+		} finally {
+			update_option( $this->role_key, $snapshot );
+			$GLOBALS['wp_roles'] = null;
+		}
+	}
+
+	/**
 	 * The applicability predicate (GLOSSARY.md, "Pure Super-User"): the
 	 * escalation guards restrict exactly the users holding the Super-User role
 	 * without an Administrator role and without network Super Admin status —

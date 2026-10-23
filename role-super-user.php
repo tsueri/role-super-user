@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  Super-User Role
  * Description:  Maintains a per-site Super-User role that mirrors the site's Administrator capabilities minus the Blocklist. Drop this file into wp-content/mu-plugins/ to install.
- * Version:      1.0.2
+ * Version:      1.1.0
  * Requires at least: 4.9
  * Requires PHP: 7.0
  * License:      GPL-2.0-or-later
@@ -16,8 +16,10 @@
  *
  * The role is a delegation of trust, not a security boundary, and mu-plugins
  * have no deactivate switch. Break-glass: always keep at least one real
- * Administrator; remove this file to stop syncing (revokes nothing — run the
- * Abolish procedure in README.md for that).
+ * Administrator. To stop syncing, remove this file (revokes nothing); for
+ * complete removal run `wp super-user abolish` — it strips holders, deletes
+ * the role, and removes the file itself, in that order. The README keeps the
+ * manual procedure for when the file is already gone.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -348,9 +350,209 @@ function super_user_role_restrict_all_settings_cap( $capability ) {
 	return 'do_not_allow';
 }
 
+/**
+ * The sites an Abolish covers: the current site, or — with the network flag —
+ * every live site of a multisite network. Archived, spam, and deleted sites
+ * are skipped: they are inert, matching the documented manual procedure.
+ *
+ * @param bool $network Whether to cover every live site of the network.
+ * @return int[] Blog IDs to abolish.
+ */
+function super_user_role_abolish_site_ids( $network ) {
+	if ( ! $network || ! is_multisite() ) {
+		return array( get_current_blog_id() );
+	}
+
+	$site_ids = array();
+	foreach ( get_sites( array( 'archived' => 0, 'deleted' => 0, 'spam' => 0, 'number' => 0 ) ) as $site ) {
+		$site_ids[] = (int) $site->blog_id;
+	}
+
+	return $site_ids;
+}
+
+/**
+ * What an Abolish of one site would do, without changing anything: the plan.
+ *
+ * @param int $blog_id Blog ID.
+ * @return array<string, mixed> holders: count of Super-User holders; role_exists: whether the role definition is present; url: the site's URL.
+ */
+function super_user_role_abolish_plan_site( $blog_id ) {
+	$blog_id  = (int) $blog_id;
+	$switched = false;
+
+	if ( is_multisite() && get_current_blog_id() !== $blog_id ) {
+		switch_to_blog( $blog_id );
+		$switched = true;
+	}
+
+	$plan = array(
+		'holders'     => count( get_users( array( 'role' => 'super_user', 'fields' => 'ids' ) ) ),
+		'role_exists' => (bool) get_role( 'super_user' ),
+		'url'         => home_url(),
+	);
+
+	if ( $switched ) {
+		restore_current_blog();
+	}
+
+	return $plan;
+}
+
+/**
+ * Abolish one site: strip the Super-User role from its holders, then delete
+ * the role definition.
+ *
+ * The order is the whole point: `remove_role()` — and WP-CLI's `wp role delete`
+ * — touches no user meta, so deleting first would leave an inert stale
+ * `super_user` entry in holders' capabilities meta, and reinstalling the
+ * plugin would lazily re-create the role and instantly re-power those users.
+ * Stripping first removes that foothold: naming the role keeps holders' other
+ * roles and site membership, and a sync that runs while the file is still
+ * present can only re-create an empty definition no holder would fill.
+ *
+ * @param int $blog_id Blog ID.
+ * @return array<string, mixed> holders_stripped: count; role_deleted: whether a role definition was deleted.
+ */
+function super_user_role_abolish_site( $blog_id ) {
+	$blog_id  = (int) $blog_id;
+	$stripped = 0;
+	$switched = false;
+
+	if ( is_multisite() && get_current_blog_id() !== $blog_id ) {
+		switch_to_blog( $blog_id );
+		$switched = true;
+	}
+
+	foreach ( get_users( array( 'role' => 'super_user', 'fields' => 'ids' ) ) as $user_id ) {
+		$user = get_userdata( $user_id );
+		if ( $user ) {
+			$user->remove_role( 'super_user' );
+			$stripped++;
+		}
+	}
+
+	$role_existed = (bool) get_role( 'super_user' );
+	remove_role( 'super_user' );
+
+	if ( $switched ) {
+		restore_current_blog();
+	}
+
+	return array(
+		'holders_stripped' => $stripped,
+		'role_deleted'     => $role_existed,
+	);
+}
+
+/**
+ * Abolish the whole network: every live site, each via
+ * super_user_role_abolish_site(). On single site this covers the one site.
+ *
+ * @return array<int, array<string, mixed>> Blog ID => super_user_role_abolish_site() result.
+ */
+function super_user_role_abolish_network() {
+	$results = array();
+	foreach ( super_user_role_abolish_site_ids( true ) as $blog_id ) {
+		$results[ $blog_id ] = super_user_role_abolish_site( $blog_id );
+	}
+
+	return $results;
+}
+
 add_filter( 'pre_update_option', 'super_user_role_guard_option_write', 10, 3 );
 add_filter( 'map_meta_cap', 'super_user_role_deny_meta_caps', 10, 3 );
 add_filter( 'option_page_capability_options', 'super_user_role_restrict_all_settings_cap' );
 add_action( 'load-options.php', 'super_user_role_restrict_all_settings' );
 
 add_action( 'wp_loaded', 'super_user_role_sync' );
+
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+
+	/**
+	 * WP-CLI command: the Abolish procedure as one command.
+	 */
+	class Super_User_Role_Abolish_Command {
+
+		/**
+		 * Completely remove the Super-User role: strip holders, delete the role definition, remove this mu-plugin file.
+		 *
+		 * The order is enforced here: holders are stripped before the role is
+		 * deleted (deleting first leaves the stale super_user entry in holders'
+		 * capabilities meta, which reinstalling the plugin would instantly
+		 * re-power), and the mu-plugin file is removed last — there is no
+		 * window in which the lazy sync could re-create the role. Without
+		 * --yes nothing is changed: only the plan is printed.
+		 *
+		 * [--network]
+		 * : Every live site of the network; archived, spam, and deleted sites are skipped.
+		 *
+		 * [--yes]
+		 * : Execute. Without it, print the plan and change nothing.
+		 *
+		 * ## EXAMPLES
+		 *
+		 *     # Plan only
+		 *     wp super-user abolish
+		 *
+		 *     # Abolish this site (or the one selected with --url)
+		 *     wp super-user abolish --yes
+		 *
+		 *     # Abolish every live site of the network
+		 *     wp super-user abolish --network --yes
+		 */
+		public function abolish( $args, $assoc_args ) {
+			$network = isset( $assoc_args['network'] );
+			$yes     = isset( $assoc_args['yes'] );
+
+			if ( $network && ! is_multisite() ) {
+				WP_CLI::line( 'Single site: --network covers this one site.' );
+			}
+
+			foreach ( super_user_role_abolish_site_ids( $network ) as $blog_id ) {
+				$plan = super_user_role_abolish_plan_site( $blog_id );
+				WP_CLI::line(
+					sprintf(
+						'  site %d (%s): %d holder(s), role definition %s.',
+						$blog_id,
+						$plan['url'],
+						$plan['holders'],
+						$plan['role_exists'] ? 'present' : 'absent'
+					)
+				);
+			}
+
+			if ( ! $yes ) {
+				WP_CLI::line( 'Nothing changed. Run again with --yes to execute.' );
+				return;
+			}
+
+			foreach ( super_user_role_abolish_site_ids( $network ) as $blog_id ) {
+				$result = super_user_role_abolish_site( $blog_id );
+				WP_CLI::line(
+					sprintf(
+						'  site %d: stripped %d holder(s), role definition %s.',
+						$blog_id,
+						$result['holders_stripped'],
+						$result['role_deleted'] ? 'deleted' : 'was already absent'
+					)
+				);
+			}
+
+			/*
+			 * File out, last: the mu-plugin file is the sync itself. Removing
+			 * it mid-run is safe — PHP keeps executing the loaded script.
+			 */
+			if ( @unlink( __FILE__ ) ) {
+				WP_CLI::success( 'Abolished. The mu-plugin file was removed: ' . __FILE__ );
+				return;
+			}
+
+			WP_CLI::error(
+				'Holders stripped and role definitions deleted, but the mu-plugin file could not be removed. Delete it by hand, or the lazy sync will re-create empty role definitions: ' . __FILE__
+			);
+		}
+	}
+
+	WP_CLI::add_command( 'super-user', 'Super_User_Role_Abolish_Command' );
+}

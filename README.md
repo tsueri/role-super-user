@@ -81,14 +81,26 @@ Note the filters: archived, spam, and deleted sites are excluded, and `--field=u
 
 **Upgrade** = overwrite the file; the sync re-runs on the next request, per site.
 
-**Freeze, not revoke:** removing the mu-plugin file stops syncing but revokes *nothing* — the role and its assignments persist with their last-synced capabilities. Complete removal is the Abolish procedure below.
+**Freeze, not revoke:** removing the mu-plugin file stops syncing but revokes *nothing* — the role and its assignments persist with their last-synced capabilities. Complete removal is `wp super-user abolish` (or the manual procedure below, if the file is already gone).
 
 ## Abolish
 
-Complete removal of the Super-User role from a site: sync stopped, role stripped from holders, role definition deleted. Ordering is forced: **the file comes out first**, or the lazy sync re-creates the role on the next boot.
+Complete removal of the Super-User role from a site: sync stopped, role stripped from holders, role definition deleted — the whole procedure in one command:
 
-1. **Remove the mu-plugin file.** This alone revokes nothing (see freeze-not-revoke).
-2. **Strip holders, per site** — naming the role keeps holders' other roles and site membership:
+```sh
+wp super-user abolish --yes             # single site (or one subsite with --url)
+wp super-user abolish --network --yes   # every live site in the network
+```
+
+Without `--yes` the command only prints the plan — the sites it would visit and how many holders it would strip on each. Nothing changes until you pass `--yes`.
+
+The dangerous ordering is enforced in code, not in prose: holders are stripped **before** the role is deleted, and the mu-plugin file is removed last, so there is no window in which the lazy sync re-creates the role. Archived, spam, and deleted sites are skipped. If the file cannot be unlinked (it is owned by another user), the command exits non-zero and prints the path to remove by hand — holders and role definitions are already dealt with.
+
+### Manual Abolish (only when the file is already gone)
+
+Once the mu-plugin file is removed, the command is gone with it. The freeze state leaves the role and its assignments in place; complete removal then runs by hand, per site, in this order:
+
+1. **Strip holders, per site** — naming the role keeps holders' other roles and site membership:
 
    ```sh
    wp user list --role=super_user --field=ID --url=<site>
@@ -96,7 +108,7 @@ Complete removal of the Super-User role from a site: sync stopped, role stripped
    ```
 
    ⚠️ Never run bare `wp user remove-role <user>` on multisite: without a role argument it removes the user **from the site entirely**.
-3. **Delete the role, per site:**
+2. **Delete the role, per site:**
 
    ```sh
    # multisite
@@ -105,9 +117,7 @@ Complete removal of the Super-User role from a site: sync stopped, role stripped
    wp role delete super_user
    ```
 
-   `wp role delete` touches no user meta — which is why step 2 exists.
-
-**Reinstall-resurrection warning:** deleting the role without stripping holders leaves an inert stale `super_user` entry in users' capabilities meta. It grants nothing while the plugin is gone, but reinstalling the plugin lazily re-creates the role and instantly re-powers those users. Step 2 is the protection.
+**Reinstall-resurrection warning:** deleting the role without stripping holders leaves an inert stale `super_user` entry in users' capabilities meta. It grants nothing while the plugin is gone, but reinstalling the plugin lazily re-creates the role and instantly re-powers those users. Stripping first is the protection — the command enforces it; the manual procedure must not skip it.
 
 ## Multisite notes
 

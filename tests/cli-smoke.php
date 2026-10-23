@@ -34,3 +34,24 @@ if ( ! super_user_role_caps_equal( $super_user->capabilities, super_user_role_ex
 }
 
 echo 'OK: super_user in sync on site ' . $site . ' (' . count( $super_user->capabilities ) . " caps)\n";
+
+/*
+ * The Abolish command is registered, and its plan mode changes nothing: the
+ * plan prints (with its --yes hint) and the role is still here afterwards.
+ */
+$plan = WP_CLI::runcommand(
+	'super-user abolish',
+	array( 'return' => 'stdout', 'exit_error' => false )
+);
+
+if ( ! is_string( $plan ) || false === strpos( $plan, '--yes' ) ) {
+	echo "FAIL: 'wp super-user abolish' did not print a plan (expected the --yes hint).\n";
+	exit( 1 );
+}
+
+if ( ! get_role( 'super_user' ) ) {
+	echo "FAIL: plan mode must not abolish anything.\n";
+	exit( 1 );
+}
+
+echo "OK: 'wp super-user abolish' plans without changing anything\n";
