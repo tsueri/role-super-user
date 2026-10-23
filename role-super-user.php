@@ -25,7 +25,12 @@ defined( 'ABSPATH' ) || exit;
 /**
  * The Blocklist: capabilities never granted to a Super-User, no matter what the
  * site's Administrator holds. Covers user management, plugin and theme
- * management, code editing, and core updates.
+ * management, code editing, core updates, and credentials.
+ *
+ * `manage_secrets` (WordPress 7.2) and `manage_network_secrets` keep the site's
+ * credential store — API keys, payment, SMTP, AI secrets — out of Super-User
+ * reach even when WordPress or a plugin grants the capability to the site's
+ * Administrator role.
  *
  * `edit_theme_options` is deliberately not blocklisted: menus, widgets, and the
  * Customizer stay, while theme switching, installing, and file editing do not.
@@ -54,6 +59,8 @@ function super_user_role_blocklist() {
 		'remove_users',
 		'add_users',
 		'update_core',
+		'manage_secrets',
+		'manage_network_secrets',
 	);
 }
 

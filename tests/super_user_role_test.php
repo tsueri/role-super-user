@@ -40,6 +40,8 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 		'remove_users',
 		'add_users',
 		'update_core',
+		'manage_secrets',
+		'manage_network_secrets',
 	);
 
 	/**
