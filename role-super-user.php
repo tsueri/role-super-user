@@ -208,13 +208,41 @@ function super_user_role_guard_option_write( $value, $old_value, $option ) {
 }
 
 /**
- * Deny `setup_network` to a Super-User.
+ * Meta capabilities denied to a pure Super-User even though the site's
+ * Administrator holds what they map to. Every entry maps to `manage_options`
+ * on single site — a primitive the Super-User keeps — so without this list
+ * each would be a route around the Blocklist's intent that a capability check
+ * alone allows:
  *
- * On single site this meta capability maps to `manage_options`, and the Network
- * Setup screen accepts an arbitrary network-admin email. Without this guard a
- * Super-User could run Network Setup, name themselves, and become a network
- * Super Admin — a role that bypasses every capability check, including the
- * Blocklist.
+ * - `setup_network`: the Network Setup screen accepts an arbitrary
+ *   network-admin email; a Super-User could run Network Setup, name
+ *   themselves, and become a network Super Admin — a role that bypasses every
+ *   capability check, including the Blocklist.
+ * - `export_others_personal_data`: the privacy tools would let a Super-User
+ *   export another user's personal data, an Administrator's included,
+ *   bypassing `edit_users`/`list_users`. Administrators keep the tool.
+ *
+ * `erase_others_personal_data` needs no entry: the erase action also requires
+ * `delete_users`, which the Blocklist already removes.
+ *
+ * Adding an entry here is a data change, not a new branch.
+ *
+ * @return string[] The denied meta capability names.
+ */
+function super_user_role_denied_meta_caps() {
+	return array(
+		'setup_network',
+		'export_others_personal_data',
+	);
+}
+
+/**
+ * Deny the meta capabilities listed in super_user_role_denied_meta_caps() to
+ * a Super-User.
+ *
+ * Returning `do_not_allow` rejects the check outright, without changing what
+ * anyone else needs. Administrators and network Super Admins keep their
+ * access; so does anyone who is not a pure Super-User.
  *
  * @param string[] $caps    Required primitive capabilities.
  * @param string   $cap     The capability being checked.
@@ -222,7 +250,7 @@ function super_user_role_guard_option_write( $value, $old_value, $option ) {
  * @return string[] Primitive capabilities.
  */
 function super_user_role_deny_meta_caps( $caps, $cap, $user_id ) {
-	if ( 'setup_network' !== $cap ) {
+	if ( ! in_array( $cap, super_user_role_denied_meta_caps(), true ) ) {
 		return $caps;
 	}
 
