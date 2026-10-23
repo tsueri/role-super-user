@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  Super-User Role
  * Description:  Maintains a per-site Super-User role that mirrors the site's Administrator capabilities minus the Blocklist. Drop this file into wp-content/mu-plugins/ to install.
- * Version:      1.0.1
+ * Version:      1.0.2
  * Requires at least: 4.9
  * Requires PHP: 7.0
  * License:      GPL-2.0-or-later

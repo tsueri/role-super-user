@@ -9,7 +9,7 @@ A per-site WordPress role holding that site's Administrator capabilities minus t
 _Avoid_: Super Admin (that term already means the network owner in WordPress), admin-plus, poweradmin
 
 **Blocklist**:
-The fixed set of capabilities never granted to a Super-User, covering user management, plugin and theme management, code editing, and core updates.
+The fixed set of capabilities never granted to a Super-User, covering user management, plugin and theme management, code editing, core updates, and credentials.
 _Avoid_: denylist, exclusion list, stripped caps
 
 **Capability sync**:
