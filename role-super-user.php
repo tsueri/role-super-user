@@ -174,6 +174,10 @@ function super_user_role_is_restricted( $user_id ) {
  * Options that would let a Super-User create an Administrator if they could
  * write them, and the capability normally required to change each one.
  *
+ * This map is the registration: every entry is enforced by the single
+ * `pre_update_option` filter, so adding a guarded option means adding an
+ * entry here — and nothing else. The two can never drift apart silently.
+ *
  * `options.php` gates Settings writes on `manage_options` alone, so the Settings
  * screen hides these fields from Super-Users but a crafted POST can still submit
  * them. The Blocklist removes the capabilities below, which is why the write is
@@ -191,15 +195,20 @@ function super_user_role_guarded_options() {
 /**
  * Deny a Pure Super-User's attempt to write an option that can mint Administrators.
  *
- * Returning the old value makes `update_option()` a no-op without erroring, so
- * a crafted Settings POST leaves the stored option untouched.
+ * Runs on the generic `pre_update_option` filter: every option write passes
+ * through, and the `super_user_role_guarded_options()` lookup is the first
+ * statement, so unguarded options cost one isset(). Returning the old value
+ * makes `update_option()` a no-op without erroring, so a crafted Settings POST
+ * leaves the stored option untouched. The filters also run before core's
+ * `add_option()` fallback for a missing option row, and the same returned
+ * old value forces the equality check that short-circuits that path too.
  *
  * @param mixed  $value     The new option value.
- * @param mixed  $old_value The current option value.
  * @param string $option    The option name.
+ * @param mixed  $old_value The current option value.
  * @return mixed The new value, or the old value when the change is denied.
  */
-function super_user_role_guard_option_write( $value, $old_value, $option ) {
+function super_user_role_guard_option_write( $value, $option, $old_value ) {
 	$guarded = super_user_role_guarded_options();
 	if ( ! isset( $guarded[ $option ] ) ) {
 		return $value;
@@ -318,8 +327,7 @@ function super_user_role_restrict_all_settings_cap( $capability ) {
 	return 'do_not_allow';
 }
 
-add_filter( 'pre_update_option_default_role', 'super_user_role_guard_option_write', 10, 3 );
-add_filter( 'pre_update_option_users_can_register', 'super_user_role_guard_option_write', 10, 3 );
+add_filter( 'pre_update_option', 'super_user_role_guard_option_write', 10, 3 );
 add_filter( 'map_meta_cap', 'super_user_role_deny_meta_caps', 10, 3 );
 add_filter( 'option_page_capability_options', 'super_user_role_restrict_all_settings_cap' );
 add_action( 'load-options.php', 'super_user_role_restrict_all_settings' );
