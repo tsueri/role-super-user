@@ -174,11 +174,36 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 	/**
 	 * Secrets stay with Administrators. WordPress 7.2 grants `manage_secrets`
 	 * to the Administrator role, and network-level plugins can grant
-	 * `manage_network_secrets`; the fixture simulates both grants, so this
-	 * holds on every WordPress version the suite runs against — no version
-	 * gate, no skip. The Blocklist must keep both out of the Super-User role
-	 * and out of a Super-User's runtime checks, while an Administrator keeps
-	 * satisfying the capability where WordPress exposes it.
+	 * `manage_network_secrets`; the fixture simulates both grants, so the
+	 * stored-role assertions hold on every WordPress version the suite runs
+	 * against — no version gate, no skip.
+	 *
+	 * What each layer proves:
+	 *
+	 * - Stored role, both configs: the fixture's grant reaches the
+	 *   Administrator while the sync keeps both capabilities out of the
+	 *   Super-User role — the Blocklist wins at the mirror, whatever core
+	 *   does at check time.
+	 * - Super-User runtime denial, both configs: the Super-User role holds
+	 *   neither primitive, so `user_can()` stays false whether or not 7.2
+	 *   adds a check-time subsite gate. The plugin's denial does not depend
+	 *   on core's mapping, so it is asserted unconditionally.
+	 * - Administrator runtime allow, single site only: proves the Blocklist
+	 *   costs the Administrator nothing where WordPress exposes the
+	 *   capability — on single site, the role grant satisfies the check. On
+	 *   multisite, 7.2's check-time mapping for subsite users is unspecified:
+	 *   core may gate the capability on the site, as it does for `edit_users`
+	 *   on others and the privacy caps, which resolve against
+	 *   `manage_network`. A multisite allow-assertion would codify a guess,
+	 *   so none is made.
+	 *
+	 * `manage_network_secrets` gets the stored-role check and the Super-User
+	 * denial, but no runtime allow-check on any config — inventing one would
+	 * assert the same unverifiable guess. The Administrator-facing guarantee
+	 * this plugin owns is the stored mirror (never granted beyond the site's
+	 * Administrator); whether WordPress exposes a capability at check time on
+	 * every config is core's call, so the suite asserts the allow only where
+	 * it is verifiable today: single site, `manage_secrets`.
 	 */
 	public function test_secret_management_stays_with_administrators() {
 		require_once __DIR__ . '/fixtures/propagate-caps.php';
@@ -198,13 +223,23 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 		$this->assertArrayNotHasKey( 'manage_secrets', $super_user->capabilities, 'Credential management must never enter the role.' );
 		$this->assertArrayNotHasKey( 'manage_network_secrets', $super_user->capabilities, 'Network credential management must never enter the role.' );
 
-		// Runtime, not merely stored: the denial holds where the capability is checked.
+		// Runtime, not merely stored: the Super-User role holds neither
+		// primitive, so the denial holds on both configs whether or not 7.2
+		// adds a check-time subsite gate.
 		$super_id = self::factory()->user->create( array( 'role' => 'super_user' ) );
 		$this->assertFalse( user_can( $super_id, 'manage_secrets' ), 'A Super-User must not manage secrets.' );
 		$this->assertFalse( user_can( $super_id, 'manage_network_secrets' ), 'A Super-User must not manage network secrets.' );
 
-		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
-		$this->assertTrue( user_can( $admin_id, 'manage_secrets' ), 'Administrators keep managing secrets.' );
+		/*
+		 * Administrator allow-check, single site only — deliberately not
+		 * `assertSame( ! is_multisite(), ... )`: that would assert a multisite
+		 * denial this suite cannot verify, because 7.2's check-time mapping
+		 * for subsite users is core's call (see the docblock above).
+		 */
+		if ( ! is_multisite() ) {
+			$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+			$this->assertTrue( user_can( $admin_id, 'manage_secrets' ), 'Administrators keep managing secrets where WordPress exposes the capability.' );
+		}
 	}
 
 	/**
