@@ -439,6 +439,74 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The All-Settings request decision (the internal seam behind the
+	 * load-options.php guard), as a table: block unless the request is a POST
+	 * to a named Settings screen other than the All Settings pseudo-page.
+	 */
+	public function test_all_settings_request_decision_table() {
+		$this->assertFalse( super_user_role_all_settings_blocked( 'POST', 'general' ), 'A normal Settings screen keeps saving.' );
+		$this->assertTrue( super_user_role_all_settings_blocked( 'GET', 'general' ), 'Anything but a POST is blocked.' );
+		$this->assertTrue( super_user_role_all_settings_blocked( 'POST', '' ), 'A request without option_page is a direct All Settings hit.' );
+		$this->assertTrue( super_user_role_all_settings_blocked( 'POST', 'options' ), 'The All Settings pseudo-page is blocked.' );
+	}
+
+	/**
+	 * The request adapter: reads the superglobals, applies the applicability
+	 * predicate, and dies with a 403 on a blocked shape. A Pure Super-User's
+	 * normal Settings POST passes through; a direct All Settings hit dies;
+	 * an Administrator is never touched, whatever the request shape.
+	 */
+	public function test_all_settings_request_guard_adapter() {
+		wp_set_current_user( 0 );
+
+		$super_id = self::factory()->user->create( array( 'role' => 'super_user' ) );
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+
+		$saved_method      = $_SERVER['REQUEST_METHOD'] ?? null;
+		$saved_option_page = $_REQUEST['option_page'] ?? null;
+
+		try {
+			wp_set_current_user( $super_id );
+
+			// A normal Settings POST passes through without dying.
+			$_SERVER['REQUEST_METHOD'] = 'POST';
+			$_REQUEST['option_page']   = 'general';
+			super_user_role_restrict_all_settings();
+
+			// A direct All Settings hit dies with the guard's 403.
+			$_SERVER['REQUEST_METHOD'] = 'GET';
+			unset( $_REQUEST['option_page'] );
+			try {
+				super_user_role_restrict_all_settings();
+				$this->fail( 'A direct All Settings request must be died.' );
+			} catch ( WPDieException $e ) {
+				$this->assertSame( 'Sorry, you are not allowed to manage these options.', $e->getMessage() );
+				$this->assertSame( 403, $e->getCode() );
+			}
+
+			// The predicate gates the adapter: an Administrator is never died.
+			wp_set_current_user( $admin_id );
+			$_SERVER['REQUEST_METHOD'] = 'GET';
+			unset( $_REQUEST['option_page'] );
+			super_user_role_restrict_all_settings();
+		} finally {
+			if ( null === $saved_method ) {
+				unset( $_SERVER['REQUEST_METHOD'] );
+			} else {
+				$_SERVER['REQUEST_METHOD'] = $saved_method;
+			}
+
+			if ( null === $saved_option_page ) {
+				unset( $_REQUEST['option_page'] );
+			} else {
+				$_REQUEST['option_page'] = $saved_option_page;
+			}
+
+			wp_set_current_user( 0 );
+		}
+	}
+
+	/**
 	 * The legacy All Settings screen writes arbitrary options (active_plugins,
 	 * template, stylesheet), so a Super-User must not reach it. Administrators
 	 * keep the page's normal `manage_options` requirement.

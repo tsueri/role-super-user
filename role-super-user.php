@@ -281,13 +281,34 @@ function super_user_role_deny_meta_caps( $caps, $cap, $user_id ) {
 }
 
 /**
+ * The All-Settings request decision: the rule behind the load-options.php
+ * guard, as a pure function (an internal seam of this module).
+ *
+ * Both arguments arrive canonical: `$method` uppercased, `$option_page`
+ * sanitized — the request plumbing lives in the adapter. Blocked is the
+ * default: the request must be a POST to a named Settings screen other than
+ * the All Settings pseudo-page itself (`option_page=options`, or no page at
+ * all, is how options.php renders and writes arbitrary options). A caller
+ * that skips the uppercasing fails closed, which is the safe direction here.
+ *
+ * @param string $method      Request method, uppercased.
+ * @param string $option_page Sanitized `option_page` request value, '' if absent.
+ * @return bool True when the request is blocked from the All Settings screen.
+ */
+function super_user_role_all_settings_blocked( $method, $option_page ) {
+	return 'POST' !== $method || '' === $option_page || 'options' === $option_page;
+}
+
+/**
  * Keep a Pure Super-User out of the legacy "All Settings" screen.
  *
- * `options.php` renders and writes arbitrary options when it is requested
- * directly (`option_page=options`, or no page at all). That bypasses the
- * Blocklist: `active_plugins`, `template`, and `stylesheet` are all writable
- * there. Normal Settings screens still POST to `options.php` with their own
- * `option_page`, so they keep working.
+ * The adapter: reads the request, applies the applicability predicate, and
+ * hands canonical values to `super_user_role_all_settings_blocked()` — the
+ * rule itself lives there, tested as a table. `options.php` renders and
+ * writes arbitrary options when it is requested directly (`option_page=options`,
+ * or no page at all). That bypasses the Blocklist: `active_plugins`, `template`,
+ * and `stylesheet` are all writable there. Normal Settings screens still POST
+ * to `options.php` with their own `option_page`, so they keep working.
  */
 function super_user_role_restrict_all_settings() {
 	if ( ! super_user_role_is_restricted( get_current_user_id() ) ) {
@@ -299,7 +320,7 @@ function super_user_role_restrict_all_settings() {
 		? sanitize_text_field( wp_unslash( $_REQUEST['option_page'] ) )
 		: '';
 
-	if ( 'POST' !== $method || '' === $option_page || 'options' === $option_page ) {
+	if ( super_user_role_all_settings_blocked( $method, $option_page ) ) {
 		wp_die(
 			'Sorry, you are not allowed to manage these options.',
 			'',
