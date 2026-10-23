@@ -214,7 +214,7 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 			$this->assertArrayNotHasKey( $cap, get_role( 'super_user' )->capabilities, "Precondition: '{$cap}' has not propagated yet." );
 		}
 
-		rsu_fixture_inject_secret_caps();
+		rsu_fixture_inject_caps( $secret_caps );
 		super_user_role_sync();
 
 		$administrator = get_role( 'administrator' );
@@ -276,7 +276,7 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 
 		$this->assertArrayNotHasKey( 'rsu_fake_cap', get_role( 'super_user' )->capabilities, 'Precondition: the cap has not propagated yet.' );
 
-		rsu_fixture_inject_admin_caps();
+		rsu_fixture_inject_caps( array( 'rsu_fake_cap', 'add_users' ) );
 		super_user_role_sync();
 
 		$super_user = get_role( 'super_user' );
