@@ -144,15 +144,24 @@ function super_user_role_sync() {
 }
 
 /**
- * Whether a user holds the Super-User role without also being an Administrator
- * (or a network Super Admin, which the caller handles separately).
+ * Whether a user is a Pure Super-User (GLOSSARY.md): they hold the Super-User
+ * role without also being an Administrator on the site, and they are not a
+ * Super Admin in WordPress's sense (is_super_admin()).
+ *
+ * The escalation guards apply to exactly this class; everyone else passes
+ * through untouched. On multisite, `is_super_admin()` reads the network's
+ * super-admin list; on single site, core also counts holders of `delete_users`
+ * as Super Admins. The Blocklist never grants `delete_users` through the role,
+ * so only a per-user grant can put a Super-User there — and such a user has
+ * left the "Administrator minus the Blocklist" model the guards police.
+ * Logged-out users hold no roles and fail the role check.
  *
  * @param int $user_id User ID.
- * @return bool True when the user is a pure Super-User.
+ * @return bool True when the user is a Pure Super-User.
  */
 function super_user_role_is_restricted( $user_id ) {
 	$user = get_userdata( $user_id );
-	if ( ! $user ) {
+	if ( ! $user || is_super_admin( $user_id ) ) {
 		return false;
 	}
 
@@ -180,7 +189,7 @@ function super_user_role_guarded_options() {
 }
 
 /**
- * Deny a Super-User's attempt to write an option that can mint Administrators.
+ * Deny a Pure Super-User's attempt to write an option that can mint Administrators.
  *
  * Returning the old value makes `update_option()` a no-op without erroring, so
  * a crafted Settings POST leaves the stored option untouched.
@@ -192,7 +201,7 @@ function super_user_role_guarded_options() {
  */
 function super_user_role_guard_option_write( $value, $old_value, $option ) {
 	$guarded = super_user_role_guarded_options();
-	if ( ! isset( $guarded[ $option ] ) || ! is_user_logged_in() ) {
+	if ( ! isset( $guarded[ $option ] ) ) {
 		return $value;
 	}
 
@@ -208,7 +217,7 @@ function super_user_role_guard_option_write( $value, $old_value, $option ) {
 }
 
 /**
- * Meta capabilities denied to a pure Super-User even though the site's
+ * Meta capabilities denied to a Pure Super-User even though the site's
  * Administrator holds what they map to. Every entry maps to `manage_options`
  * on single site — a primitive the Super-User keeps — so without this list
  * each would be a route around the Blocklist's intent that a capability check
@@ -237,12 +246,13 @@ function super_user_role_denied_meta_caps() {
 }
 
 /**
- * Deny the meta capabilities listed in super_user_role_denied_meta_caps() to
- * a Super-User.
+ * Deny the meta capabilities listed in super_user_role_denied_meta_caps()
+ * to a Pure Super-User.
  *
  * Returning `do_not_allow` rejects the check outright, without changing what
- * anyone else needs. Administrators and network Super Admins keep their
- * access; so does anyone who is not a pure Super-User.
+ * anyone else needs. `super_user_role_is_restricted()` already exempts
+ * Administrators and everyone WordPress counts as a Super Admin (ADR-0002),
+ * so only a Pure Super-User is denied.
  *
  * @param string[] $caps    Required primitive capabilities.
  * @param string   $cap     The capability being checked.
@@ -254,7 +264,7 @@ function super_user_role_deny_meta_caps( $caps, $cap, $user_id ) {
 		return $caps;
 	}
 
-	if ( is_super_admin( $user_id ) || ! super_user_role_is_restricted( $user_id ) ) {
+	if ( ! super_user_role_is_restricted( $user_id ) ) {
 		return $caps;
 	}
 
@@ -262,7 +272,7 @@ function super_user_role_deny_meta_caps( $caps, $cap, $user_id ) {
 }
 
 /**
- * Keep a Super-User out of the legacy "All Settings" screen.
+ * Keep a Pure Super-User out of the legacy "All Settings" screen.
  *
  * `options.php` renders and writes arbitrary options when it is requested
  * directly (`option_page=options`, or no page at all). That bypasses the
@@ -271,8 +281,7 @@ function super_user_role_deny_meta_caps( $caps, $cap, $user_id ) {
  * `option_page`, so they keep working.
  */
 function super_user_role_restrict_all_settings() {
-	$user_id = get_current_user_id();
-	if ( is_super_admin( $user_id ) || ! super_user_role_is_restricted( $user_id ) ) {
+	if ( ! super_user_role_is_restricted( get_current_user_id() ) ) {
 		return;
 	}
 
@@ -291,23 +300,22 @@ function super_user_role_restrict_all_settings() {
 }
 
 /**
- * Keep a Super-User out of the "All Settings" page.
+ * Keep a Pure Super-User out of the "All Settings" page.
  *
  * The page's capability is `manage_options`; returning `do_not_allow` for a
- * Super-User rejects the check without changing what Administrators need. On
- * WordPress older than 7.0 this filter does not apply to direct access, so
+ * Pure Super-User rejects the check without changing what Administrators need.
+ * On WordPress older than 7.0 this filter does not apply to direct access, so
  * `super_user_role_restrict_all_settings()` is the second line of defence.
  *
  * @param string $capability Capability required by options.php.
  * @return string Capability required by options.php.
  */
 function super_user_role_restrict_all_settings_cap( $capability ) {
-	$user_id = get_current_user_id();
-	if ( ! is_super_admin( $user_id ) && super_user_role_is_restricted( $user_id ) ) {
-		return 'do_not_allow';
+	if ( ! super_user_role_is_restricted( get_current_user_id() ) ) {
+		return $capability;
 	}
 
-	return $capability;
+	return 'do_not_allow';
 }
 
 add_filter( 'pre_update_option_default_role', 'super_user_role_guard_option_write', 10, 3 );

@@ -321,6 +321,39 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The applicability predicate (GLOSSARY.md, "Pure Super-User"): the
+	 * escalation guards restrict exactly the users holding the Super-User role
+	 * without an Administrator role and without network Super Admin status —
+	 * and never anyone else.
+	 */
+	public function test_pure_super_user_predicate() {
+		$this->assertFalse( super_user_role_is_restricted( 0 ), 'Logged out: no roles, no restriction.' );
+		$this->assertFalse( super_user_role_is_restricted( PHP_INT_MAX ), 'A nonexistent user is never restricted.' );
+
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		$this->assertFalse( super_user_role_is_restricted( $admin_id ), 'An Administrator is never restricted.' );
+
+		$super_id = self::factory()->user->create( array( 'role' => 'super_user' ) );
+		$this->assertTrue( super_user_role_is_restricted( $super_id ), 'A Pure Super-User is restricted.' );
+
+		// An Administrator who also holds the Super-User role is never restricted.
+		get_userdata( $admin_id )->add_role( 'super_user' );
+		$this->assertFalse( super_user_role_is_restricted( $admin_id ) );
+
+		// Neither is a Super Admin in WordPress's sense (is_super_admin()): on
+		// multisite via the network's super-admin list; on single site core
+		// counts holders of `delete_users` as Super Admins, and only a per-user
+		// grant can put that capability on a Super-User (the Blocklist never
+		// grants it through the role).
+		if ( is_multisite() ) {
+			grant_super_admin( $super_id );
+		} else {
+			get_userdata( $super_id )->add_cap( 'delete_users' );
+		}
+		$this->assertFalse( super_user_role_is_restricted( $super_id ) );
+	}
+
+	/**
 	 * Escalation guard: a Super-User cannot turn the default role into
 	 * Administrator or enable registration with that default, even though
 	 * `manage_options` lets them reach options.php. A crafted Settings POST must

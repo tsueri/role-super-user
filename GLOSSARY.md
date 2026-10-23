@@ -8,6 +8,10 @@ A WordPress capability plugin: a per-site role for trusted powerusers that mirro
 A per-site WordPress role holding that site's Administrator capabilities minus the Blocklist. A site-level role — never the network owner.
 _Avoid_: Super Admin (that term already means the network owner in WordPress), admin-plus, poweradmin
 
+**Pure Super-User**:
+A user holding a site's Super-User role without also holding that site's Administrator role and without being a network Super Admin. The escalation guards apply to exactly this class — never to an Administrator or network Super Admin who also holds the role.
+_Avoid_: restricted user, guard target, plain Super-User
+
 **Blocklist**:
 The fixed set of capabilities never granted to a Super-User, covering user management, plugin and theme management, code editing, core updates, and credentials.
 _Avoid_: denylist, exclusion list, stripped caps
