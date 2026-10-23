@@ -15,3 +15,7 @@ _Avoid_: denylist, exclusion list, stripped caps
 **Capability sync**:
 The invariant that a site's Super-User role continuously mirrors that site's Administrator role minus the Blocklist, so capabilities WordPress or plugins add later reach Super-Users as well.
 _Avoid_: role snapshot, cloning, mirroring
+
+**Abolish**:
+The complete removal of the Super-User role from a site: sync stopped, the role stripped from its holders, the role definition deleted. Mere file removal is not abolish — it stops sync but revokes nothing.
+_Avoid_: uninstall, deactivate (mu-plugins have neither)

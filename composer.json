@@ -1,0 +1,12 @@
+{
+	"name": "tsueri/role-super-user",
+	"description": "Super-User role mu-plugin: a per-site role mirroring the site's Administrator capabilities minus the Blocklist.",
+	"license": "GPL-2.0-or-later",
+	"require": {
+		"php": ">=7.0"
+	},
+	"require-dev": {
+		"phpunit/phpunit": "^9.6",
+		"yoast/phpunit-polyfills": "^4.0"
+	}
+}

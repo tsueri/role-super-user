@@ -1,0 +1,12 @@
+{
+	"phpVersion": "8.5",
+	"multisite": true,
+	"port": 8898,
+	"testsPort": 8899,
+	"mappings": {
+		"wp-content/mu-plugins": "."
+	},
+	"lifecycleScripts": {
+		"afterStart": "npx wp-env run cli --config=./.wp-env.multisite.json mysql -h mysql -uroot -ppassword -e 'CREATE DATABASE IF NOT EXISTS wordpress_test'"
+	}
+}

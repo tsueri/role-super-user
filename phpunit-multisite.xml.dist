@@ -1,0 +1,16 @@
+<phpunit
+		bootstrap="tests/bootstrap.php"
+		backupGlobals="false"
+		colors="true"
+		>
+	<php>
+		<!-- WordPress core test suite multisite mode: the test install becomes a
+		     multisite network (see core's tests/phpunit/multisite.xml). -->
+		<const name="WP_TESTS_MULTISITE" value="1" />
+	</php>
+	<testsuites>
+		<testsuite name="super-user-role">
+			<directory suffix="test.php">tests</directory>
+		</testsuite>
+	</testsuites>
+</phpunit>

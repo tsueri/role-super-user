@@ -1,0 +1,19 @@
+{
+	"name": "role-super-user",
+	"private": true,
+	"description": "Test tooling for the Super-User role mu-plugin: wp-env (single-site + multisite) running the PHPUnit spec, plus a WP-CLI smoke test.",
+	"scripts": {
+		"setup": "npm install && npm run env:start && npm run env:start:multisite && wp-env run cli --env-cwd=wp-content/mu-plugins composer install --no-interaction",
+		"env:start": "wp-env start",
+		"env:start:multisite": "wp-env start --config=./.wp-env.multisite.json",
+		"env:stop": "wp-env stop && wp-env stop --config=./.wp-env.multisite.json",
+		"test": "wp-env run cli --env-cwd=wp-content/mu-plugins vendor/bin/phpunit",
+		"test:multisite": "wp-env run cli --config=./.wp-env.multisite.json --env-cwd=wp-content/mu-plugins vendor/bin/phpunit -c phpunit-multisite.xml.dist",
+		"test:cli": "wp-env run cli wp eval-file wp-content/mu-plugins/tests/cli-smoke.php",
+		"test:cli:multisite": "wp-env run cli --config=./.wp-env.multisite.json wp eval-file wp-content/mu-plugins/tests/cli-smoke.php",
+		"test:all": "npm run env:start && npm run env:start:multisite && npm run test && npm run test:multisite && npm run test:cli && npm run test:cli:multisite"
+	},
+	"devDependencies": {
+		"@wordpress/env": "12.0.0"
+	}
+}

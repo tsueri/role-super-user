@@ -1,0 +1,9 @@
+{
+	"phpVersion": "8.5",
+	"mappings": {
+		"wp-content/mu-plugins": "."
+	},
+	"lifecycleScripts": {
+		"afterStart": "npx wp-env run cli mysql -h mysql -uroot -ppassword -e 'CREATE DATABASE IF NOT EXISTS wordpress_test'"
+	}
+}
