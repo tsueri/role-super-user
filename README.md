@@ -39,7 +39,7 @@ Deliberate exceptions:
 - **Network Setup.** `setup_network` maps to `manage_options` on single site, so it is denied to Super-Users. They cannot run Network Setup and name themselves network Super Admin.
 - **All Settings.** `options.php` writes arbitrary options (`active_plugins`, `template`, `stylesheet`) when accessed directly. Super-Users are kept off that page; normal Settings screens still save because they post with their own `option_page`.
 
-These guards are role-specific: Administrators and network Super Admins keep full control. They are not a security boundary — see Caveats.
+The guards apply only to Pure Super-Users (see `GLOSSARY.md`): Administrators keep full control, and so does anyone WordPress counts as a Super Admin (`is_super_admin()` — the network's super-admin list on multisite; on single site, holders of `delete_users`, a capability the Blocklist never grants through the role). They are not a security boundary — see Caveats.
 
 ## Install
 
