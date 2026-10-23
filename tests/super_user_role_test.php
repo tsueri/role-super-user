@@ -152,6 +152,42 @@ class Super_User_Role_Test extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Secrets stay with Administrators. WordPress 7.2 grants `manage_secrets`
+	 * to the Administrator role, and network-level plugins can grant
+	 * `manage_network_secrets`; the fixture simulates both grants, so this
+	 * holds on every WordPress version the suite runs against — no version
+	 * gate, no skip. The Blocklist must keep both out of the Super-User role
+	 * and out of a Super-User's runtime checks, while an Administrator keeps
+	 * satisfying the capability where WordPress exposes it.
+	 */
+	public function test_secret_management_stays_with_administrators() {
+		require_once __DIR__ . '/fixtures/propagate-caps.php';
+
+		$this->assertArrayNotHasKey( 'manage_secrets', get_role( 'super_user' )->capabilities, 'Precondition: the cap has not propagated yet.' );
+		$this->assertArrayNotHasKey( 'manage_network_secrets', get_role( 'super_user' )->capabilities, 'Precondition: the cap has not propagated yet.' );
+
+		rsu_fixture_inject_secret_caps();
+		super_user_role_sync();
+
+		$administrator = get_role( 'administrator' );
+		$super_user    = get_role( 'super_user' );
+
+		$this->assertArrayHasKey( 'manage_secrets', $administrator->capabilities, 'Precondition: the Administrator now holds the capability.' );
+		$this->assertArrayHasKey( 'manage_network_secrets', $administrator->capabilities, 'Precondition: the Administrator now holds the capability.' );
+
+		$this->assertArrayNotHasKey( 'manage_secrets', $super_user->capabilities, 'Credential management must never enter the role.' );
+		$this->assertArrayNotHasKey( 'manage_network_secrets', $super_user->capabilities, 'Network credential management must never enter the role.' );
+
+		// Runtime, not merely stored: the denial holds where the capability is checked.
+		$super_id = self::factory()->user->create( array( 'role' => 'super_user' ) );
+		$this->assertFalse( user_can( $super_id, 'manage_secrets' ), 'A Super-User must not manage secrets.' );
+		$this->assertFalse( user_can( $super_id, 'manage_network_secrets' ), 'A Super-User must not manage network secrets.' );
+
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		$this->assertTrue( user_can( $admin_id, 'manage_secrets' ), 'Administrators keep managing secrets.' );
+	}
+
+	/**
 	 * Idempotence: a boot with no Administrator change leaves the stored role
 	 * option untouched — not even a write attempt.
 	 */
